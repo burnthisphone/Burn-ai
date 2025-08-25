@@ -1,0 +1,357 @@
+#include <iostream>
+#include <vector>
+#include <cstdlib>  // For rand(), srand()
+#include <ctime>    // For time()
+#include <algorithm> // For max_element
+#include <string>
+#include <sstream>  // For stringstream
+#include <cctype>   // For isdigit
+#include <limits>   // For ignoring input
+
+using namespace std;
+
+// Hyperparameters
+int EPISODES = 1000;
+double EPSILON = 0.1;  // Exploration rate
+double ALPHA = 0.1;    // Learning rate
+double GAMMA = 0.9;    // Discount factor
+int TARGET = 42;       // Default training target
+int MAX_STEPS = 5;     // Max operations per episode
+const int STATE_BINS = 100;  // Discretize states (0 to 99)
+
+// Actions: Operations to append (no spaces)
+vector<string> ACTIONS = {"+1", "-1", "*2", "/2", "+5", "-3"};
+
+// Q-table: States x Actions
+vector<vector<double>> Q;
+
+// IQ test targets
+vector<int> IQ_TARGETS = {10, 20, 30, 42, 50};
+
+// Function to evaluate arithmetic expression (left-to-right, no precedence, integer ops)
+int evaluate_expression(const string& expr) {
+    stringstream ss(expr);
+    int result = 0;
+    char op = '+';
+    char ch;
+    int num;
+    while (ss >> ch) {
+        if (isdigit(ch) || ch == '-') {  // Start of number
+            ss.putback(ch);
+            ss >> num;
+            if (op == '+') result += num;
+            else if (op == '-') result -= num;
+            else if (op == '*') result *= num;
+            else if (op == '/') {
+                if (num != 0) result /= num;
+                else return 0;  // Error: divide by zero
+            }
+        } else {
+            op = ch;
+        }
+    }
+    return result;
+}
+
+// Simulated scrape operations from URL
+vector<string> scrape_operations_from_url(const string& url) {
+    // In a real scenario, use libcurl to fetch and parse HTML for operations
+    // Here, simulate with fixed set
+    vector<string> ops = {"+2", "-2", "*3", "/3", "+10"};
+    cout << "Scraped operations from " << url << ": ";
+    for (const auto& op : ops) cout << op << " ";
+    cout << endl;
+    return ops;
+}
+
+// Initialize Q-table
+void initialize_q_table(int num_actions) {
+    Q.assign(STATE_BINS, vector<double>(num_actions, 0.0));
+}
+
+// Print help guide
+void print_help() {
+    cout << R"(
+=== Code-Generating AI with URL Learning & IQ Test Help Guide ===
+Purpose:
+  This AI uses Q-learning to generate arithmetic expressions that evaluate to a target
+  number (default: 42). It learns by generating code, running it, and improving based on
+  rewards. It can scrape operations from URLs (simulated here) and run an IQ test to evaluate its skills.
+
+How It Works:
+  - Starts with "0" and appends operations (e.g., "+1", "*2") to build a string like "0+5*2".
+  - Evaluates the expression left-to-right (no operator precedence, integer division for /).
+  - Reward: +10 if result equals target, else penalty based on distance from target.
+  - Scrapes URLs for new operations to use as actions (simulated in this version).
+  - IQ Test: Generates expressions for multiple targets (10, 20, 30, 42, 50) and scores success rate.
+
+Actions Available:
+  - Default: +1, -1, *2, /2, +5, -3
+  - May include URL-scraped operations (e.g., +2, *3).
+
+Hyperparameters (input or Enter for default):
+  - Episodes: Number of training rounds (default: 1000).
+  - Learning Rate (0-1, default: 0.1): Update speed.
+  - Discount Factor (0-1, default: 0.9): Future vs immediate rewards.
+  - Exploration Rate (0-1, default: 0.1): Random action chance.
+  - URL: Enter a URL to scrape operations (simulated).
+  - Command: 'test' for standard test, 'testiq' for IQ test (default: test).
+
+Usage:
+  - Follow prompts, type 'help' to see this guide again.
+  - After config, trains and runs the chosen test.
+
+Tips:
+  - Increase Episodes for better results.
+  - Evaluation is left-to-right, e.g., 0+5*2 = (0+5)*2 = 10.
+  - For real URL scraping, compile with libcurl and implement HTML parsing.
+)" << endl;
+}
+
+// Discretize value
+int discretize(int value) {
+    return min(max(value, 0), STATE_BINS - 1);
+}
+
+// Choose action: epsilon-greedy
+int choose_action(int state) {
+    if ((double)rand() / RAND_MAX < EPSILON) {
+        return rand() % ACTIONS.size();  // Explore
+    } else {
+        auto maxIt = max_element(Q[state].begin(), Q[state].end());
+        return distance(Q[state].begin(), maxIt);  // Exploit
+    }
+}
+
+// Get reward
+double get_reward(int result, int target) {
+    if (result == target) return 10.0;
+    return -abs(static_cast<double>(result - target));
+}
+
+// Train the AI
+void train() {
+    srand(static_cast<unsigned>(time(0)));
+    for (int episode = 0; episode < EPISODES; ++episode) {
+        int value = 0;
+        string code = "0";
+        int state = discretize(value);
+
+        for (int step = 0; step < MAX_STEPS; ++step) {
+            int action = choose_action(state);
+            code += ACTIONS[action];
+            int new_value = evaluate_expression(code);
+            int new_state = discretize(new_value);
+            double reward = get_reward(new_value, TARGET);
+
+            double max_next_q = *max_element(Q[new_state].begin(), Q[new_state].end());
+            Q[state][action] += ALPHA * (reward + GAMMA * max_next_q - Q[state][action]);
+
+            value = new_value;
+            state = new_state;
+
+            if (reward == 10.0) break;
+        }
+        if ((episode + 1) % 100 == 0) {
+            cout << "Episode " << episode + 1 << ": Best Q-values updated" << endl;
+        }
+    }
+    cout << "Training complete!" << endl;
+}
+
+// Standard test
+void test(int num_tests = 5) {
+    cout << "\nStandard Test (Target = " << TARGET << "):\n";
+    int successes = 0;
+    for (int t = 0; t < num_tests; ++t) {
+        int value = 0;
+        string code = "0";
+        int state = discretize(value);
+        int steps = 0;
+
+        cout << "\nTest " << t + 1 << ":\n";
+        while (steps < MAX_STEPS) {
+            auto maxIt = max_element(Q[state].begin(), Q[state].end());
+            int action = distance(Q[state].begin(), maxIt);
+            code += ACTIONS[action];
+            value = evaluate_expression(code);
+            cout << "Step " << steps + 1 << ": Generated code: " << code << " -> Result: " << value << endl;
+            if (value == TARGET) {
+                cout << "Success! Reached target.\n";
+                successes++;
+                break;
+            }
+            state = discretize(value);
+            steps++;
+        }
+        if (value != TARGET) {
+            cout << "Failed to reach target.\n";
+        }
+    }
+    cout << "\nSuccess rate: " << (static_cast<double>(successes) / num_tests * 100) << "% (" << successes << "/" << num_tests << ")\n";
+}
+
+// IQ test
+void test_iq() {
+    cout << "\nIQ Test (Targets = ";
+    for (size_t i = 0; i < IQ_TARGETS.size(); ++i) {
+        cout << IQ_TARGETS[i] << (i < IQ_TARGETS.size() - 1 ? ", " : "") ;
+    }
+    cout << "):\n";
+    int successes = 0;
+    int problem = 1;
+    for (int target : IQ_TARGETS) {
+        int value = 0;
+        string code = "0";
+        int state = discretize(value);
+        int steps = 0;
+
+        cout << "\nProblem " << problem++ << ": Target = " << target << "\n";
+        while (steps < MAX_STEPS) {
+            auto maxIt = max_element(Q[state].begin(), Q[state].end());
+            int action = distance(Q[state].begin(), maxIt);
+            code += ACTIONS[action];
+            value = evaluate_expression(code);
+            cout << "Step " << steps + 1 << ": Generated code: " << code << " -> Result: " << value << endl;
+            if (value == target) {
+                cout << "Success! Reached target.\n";
+                successes++;
+                break;
+            }
+            state = discretize(value);
+            steps++;
+        }
+        if (value != target) {
+            cout << "Failed to reach target.\n";
+        }
+    }
+    double score = static_cast<double>(successes) / IQ_TARGETS.size() * 100;
+    cout << "\nIQ Test Score: " << score << "% (" << successes << "/" << IQ_TARGETS.size() << " correct)\n";
+    if (score >= 80) cout << "Excellent performance! The AI consistently solves arithmetic problems.\n";
+    else if (score >= 50) cout << "Good performance, but room for improvement. Try more training episodes.\n";
+    else cout << "Poor performance. Increase episodes or adjust hyperparameters.\n";
+}
+
+// Configure parameters and return command
+string configure_parameters() {
+    string input;
+    cout << "Configure AI parameters (type 'help' for guide, Enter for default):\n";
+
+    // URL
+    while (true) {
+        cout << "Enter URL to scrape operations (or Enter for defaults): ";
+        getline(cin, input);
+        if (input == "help") {
+            print_help();
+            continue;
+        }
+        if (input.empty()) break;
+        auto scraped = scrape_operations_from_url(input);
+        ACTIONS.insert(ACTIONS.end(), scraped.begin(), scraped.end());
+        sort(ACTIONS.begin(), ACTIONS.end());
+        ACTIONS.erase(unique(ACTIONS.begin(), ACTIONS.end()), ACTIONS.end());
+        break;
+    }
+
+    initialize_q_table(ACTIONS.size());
+
+    // Episodes
+    while (true) {
+        cout << "Enter number of training episodes (default 1000): ";
+        getline(cin, input);
+        if (input == "help") {
+            print_help();
+            continue;
+        }
+        if (input.empty()) break;
+        try {
+            EPISODES = stoi(input);
+            break;
+        } catch (...) {
+            cout << "Invalid number.\n";
+        }
+    }
+
+    // Learning rate
+    while (true) {
+        cout << "Enter learning rate (default 0.1): ";
+        getline(cin, input);
+        if (input == "help") {
+            print_help();
+            continue;
+        }
+        if (input.empty()) break;
+        try {
+            ALPHA = stod(input);
+            if (ALPHA >= 0 && ALPHA <= 1) break;
+            cout << "Must be between 0 and 1.\n";
+        } catch (...) {
+            cout << "Invalid number.\n";
+        }
+    }
+
+    // Discount factor
+    while (true) {
+        cout << "Enter discount factor (default 0.9): ";
+        getline(cin, input);
+        if (input == "help") {
+            print_help();
+            continue;
+        }
+        if (input.empty()) break;
+        try {
+            GAMMA = stod(input);
+            if (GAMMA >= 0 && GAMMA <= 1) break;
+            cout << "Must be between 0 and 1.\n";
+        } catch (...) {
+            cout << "Invalid number.\n";
+        }
+    }
+
+    // Exploration rate
+    while (true) {
+        cout << "Enter exploration rate (default 0.1): ";
+        getline(cin, input);
+        if (input == "help") {
+            print_help();
+            continue;
+        }
+        if (input.empty()) break;
+        try {
+            EPSILON = stod(input);
+            if (EPSILON >= 0 && EPSILON <= 1) break;
+            cout << "Must be between 0 and 1.\n";
+        } catch (...) {
+            cout << "Invalid number.\n";
+        }
+    }
+
+    // Command
+    string command = "test";
+    while (true) {
+        cout << "Enter command (test or testiq, default test): ";
+        getline(cin, input);
+        if (input == "help") {
+            print_help();
+            continue;
+        }
+        if (input.empty() || input == "test" || input == "testiq") {
+            if (!input.empty()) command = input;
+            break;
+        }
+        cout << "Invalid command.\n";
+    }
+    return command;
+}
+
+int main() {
+    print_help();
+    string command = configure_parameters();
+    cout << "Using actions: ";
+    for (const auto& act : ACTIONS) cout << act << " ";
+    cout << endl;
+    train();
+    if (command == "testiq") test_iq();
+    else test();
+    return 0;
+}
