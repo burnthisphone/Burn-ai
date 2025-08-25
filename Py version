@@ -1,0 +1,289 @@
+import random
+import numpy as np
+
+# Hyperparameters
+EPISODES = 1000
+EPSILON = 0.1  # Exploration rate
+ALPHA = 0.1    # Learning rate
+GAMMA = 0.9    # Discount factor
+TARGET = 42    # Default training target
+MAX_STEPS = 5  # Max operations per episode
+STATE_BINS = 100  # Discretize states (0 to 99)
+
+# Actions: Operations to append
+ACTIONS = ["+1", "-1", "*2", "//2", "+5", "-3"]
+
+# Q-table (initialized after scraping actions)
+Q = None
+
+# IQ test targets
+IQ_TARGETS = [10, 20, 30, 42, 50]
+
+# Evaluate arithmetic expression using eval (left-to-right in Python)
+def evaluate_expression(code):
+    try:
+        return eval(code, {"__builtins__": {}})  # Safe eval
+    except:
+        return 0  # Error (e.g., divide by zero)
+
+# Simulated URL scraping
+def scrape_operations_from_url(url):
+    ops = ["+2", "-2", "*3", "//3", "+10"]
+    print(f"Scraped operations from {url}: {', '.join(ops)}")
+    return ops
+
+# Initialize Q-table
+def initialize_q_table(num_actions):
+    global Q
+    Q = np.zeros((STATE_BINS, num_actions))
+
+# Help guide
+def print_help():
+    print("""
+=== Code-Generating AI with URL Learning & IQ Test Help Guide ===
+Purpose:
+  This AI uses Q-learning to generate arithmetic expressions that evaluate to a target
+  number (default: 42). It learns by generating code, running it, and improving based on
+  rewards. It can scrape operations from URLs (simulated here) and run an IQ test.
+
+How It Works:
+  - Starts with "0" and appends operations (e.g., "+1", "*2") to build a string like "0+5*2".
+  - Evaluates using Python's eval() (left-to-right, integer division for //).
+  - Reward: +10 if result equals target, else penalty based on distance.
+  - Scrapes URLs for new operations (simulated in this version).
+  - IQ Test: Generates expressions for targets (10, 20, 30, 42, 50) and scores success rate.
+
+Actions Available:
+  - Default: +1, -1, *2, //2, +5, -3
+  - May include URL-scraped operations (e.g., +2, *3).
+
+Hyperparameters (input or Enter for default):
+  - Episodes: Training rounds (default: 1000).
+  - Learning Rate (0-1, default: 0.1): Update speed.
+  - Discount Factor (0-1, default: 0.9): Future vs immediate rewards.
+  - Exploration Rate (0-1, default: 0.1): Random action chance.
+  - URL: Enter a URL to scrape operations (simulated).
+  - Command: 'test' for standard test, 'testiq' for IQ test (default: test).
+
+Usage:
+  - Type 'help' at prompts for this guide.
+  - After config, trains and runs chosen test.
+
+Tips:
+  - Increase Episodes for better results.
+  - Evaluation follows Python rules, e.g., 0+5*2 = 10 (left-to-right).
+  - For real URL scraping, install requests and beautifulsoup4.
+""")
+
+# Discretize value
+def discretize(value):
+    return min(max(int(value), 0), STATE_BINS - 1)
+
+# Choose action: epsilon-greedy
+def choose_action(state):
+    if random.random() < EPSILON:
+        return random.randint(0, len(ACTIONS) - 1)  # Explore
+    return np.argmax(Q[state])  # Exploit
+
+# Get reward
+def get_reward(result, target):
+    if result == target:
+        return 10
+    return -abs(result - target)
+
+# Train
+def train():
+    for episode in range(EPISODES):
+        value = 0
+        code = "0"
+        state = discretize(value)
+
+        for step in range(MAX_STEPS):
+            action = choose_action(state)
+            code += ACTIONS[action]
+            new_value = evaluate_expression(code)
+            new_state = discretize(new_value)
+            reward = get_reward(new_value, TARGET)
+
+            max_next_q = np.max(Q[new_state])
+            Q[state, action] += ALPHA * (reward + GAMMA * max_next_q - Q[state, action])
+
+            value = new_value
+            state = new_state
+
+            if reward == 10:
+                break
+
+        if (episode + 1) % 100 == 0:
+            print(f"Episode {episode + 1}: Best Q-values updated")
+    print("Training complete!")
+
+# Standard test
+def test(num_tests=5):
+    print(f"\nStandard Test (Target = {TARGET}):")
+    successes = 0
+    for t in range(num_tests):
+        value = 0
+        code = "0"
+        state = discretize(value)
+        steps = 0
+
+        print(f"\nTest {t + 1}:")
+        while steps < MAX_STEPS:
+            action = np.argmax(Q[state])
+            code += ACTIONS[action]
+            value = evaluate_expression(code)
+            print(f"Step {steps + 1}: Generated code: {code} -> Result: {value}")
+            if value == TARGET:
+                print("Success! Reached target.")
+                successes += 1
+                break
+            state = discretize(value)
+            steps += 1
+        if value != TARGET:
+            print("Failed to reach target.")
+    print(f"\nSuccess rate: {successes / num_tests * 100:.1f}% ({successes}/{num_tests})")
+
+# IQ test
+def test_iq():
+    print(f"\nIQ Test (Targets = {IQ_TARGETS}):")
+    successes = 0
+    for i, target in enumerate(IQ_TARGETS, 1):
+        value = 0
+        code = "0"
+        state = discretize(value)
+        steps = 0
+
+        print(f"\nProblem {i}: Target = {target}")
+        while steps < MAX_STEPS:
+            action = np.argmax(Q[state])
+            code += ACTIONS[action]
+            value = evaluate_expression(code)
+            print(f"Step {steps + 1}: Generated code: {code} -> Result: {value}")
+            if value == target:
+                print("Success! Reached target.")
+                successes += 1
+                break
+            state = discretize(value)
+            steps += 1
+        if value != target:
+            print("Failed to reach target.")
+    score = successes / len(IQ_TARGETS) * 100
+    print(f"\nIQ Test Score: {score:.1f}% ({successes}/{len(IQ_TARGETS)} correct)")
+    if score >= 80:
+        print("Excellent performance! The AI consistently solves arithmetic problems.")
+    elif score >= 50:
+        print("Good performance, but room for improvement. Try more training episodes.")
+    else:
+        print("Poor performance. Increase episodes or adjust hyperparameters.")
+
+# Configure parameters
+def configure_parameters():
+    global ACTIONS
+    print("Configure AI parameters (type 'help' for guide, Enter for default):")
+
+    # URL
+    while True:
+        url = input("Enter URL to scrape operations (or Enter for defaults): ").strip()
+        if url.lower() == "help":
+            print_help()
+            continue
+        if not url:
+            break
+        scraped = scrape_operations_from_url(url)
+        ACTIONS.extend(scraped)
+        ACTIONS = list(set(ACTIONS))  # Remove duplicates
+        break
+
+    initialize_q_table(len(ACTIONS))
+
+    # Episodes
+    while True:
+        inp = input("Enter number of training episodes (default 1000): ").strip()
+        if inp.lower() == "help":
+            print_help()
+            continue
+        if not inp:
+            break
+        try:
+            global EPISODES
+            EPISODES = int(inp)
+            break
+        except ValueError:
+            print("Invalid number.")
+
+    # Learning rate
+    while True:
+        inp = input("Enter learning rate (default 0.1): ").strip()
+        if inp.lower() == "help":
+            print_help()
+            continue
+        if not inp:
+            break
+        try:
+            global ALPHA
+            ALPHA = float(inp)
+            if 0 <= ALPHA <= 1:
+                break
+            print("Must be between 0 and 1.")
+        except ValueError:
+            print("Invalid number.")
+
+    # Discount factor
+    while True:
+        inp = input("Enter discount factor (default 0.9): ").strip()
+        if inp.lower() == "help":
+            print_help()
+            continue
+        if not inp:
+            break
+        try:
+            global GAMMA
+            GAMMA = float(inp)
+            if 0 <= GAMMA <= 1:
+                break
+            print("Must be between 0 and 1.")
+        except ValueError:
+            print("Invalid number.")
+
+    # Exploration rate
+    while True:
+        inp = input("Enter exploration rate (default 0.1): ").strip()
+        if inp.lower() == "help":
+            print_help()
+            continue
+        if not inp:
+            break
+        try:
+            global EPSILON
+            EPSILON = float(inp)
+            if 0 <= EPSILON <= 1:
+                break
+            print("Must be between 0 and 1.")
+        except ValueError:
+            print("Invalid number.")
+
+    # Command
+    command = "test"
+    while True:
+        inp = input("Enter command (test or testiq, default test): ").strip().lower()
+        if inp == "help":
+            print_help()
+            continue
+        if inp in ["", "test", "testiq"]:
+            if inp:
+                command = inp
+            break
+        print("Invalid command.")
+    return command
+
+# Main
+if __name__ == "__main__":
+    print_help()
+    command = configure_parameters()
+    print("Using actions:", ", ".join(ACTIONS))
+    train()
+    if command == "testiq":
+        test_iq()
+    else:
+        test()
